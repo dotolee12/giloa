@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>New Daedongyeojido - Giloa</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+    /* 기본 레이아웃 */
+    * { box-sizing:border-box; margin:0; padding:0; }
+    html,body { width:100%; height:100%; overflow:hidden; background:#05050a; font-family:'Apple SD Gothic Neo',sans-serif; }
+
+    #map-wrap { position:absolute; inset:0; z-index:1; }
+    #map { width:100%; height:100%; filter: grayscale(1) brightness(0.3) contrast(1.2); }
+    
+    /* 안개 레이어 (지도를 덮음) */
+    #fog-canvas { position:absolute; inset:0; z-index:400; pointer-events:none; }
+
+    /* UI 요소들 */
+    .ui-overlay { position:absolute; z-index:1000; }
+    
+    /* 좌상단 메뉴 버튼 */
+    #ham-btn {
+        top:20px; left:20px; width:48px; height:48px;
+        background:rgba(20,20,35,0.9); border:1px solid rgba(255,255,255,0.1);
+        border-radius:14px; cursor:pointer; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; gap:5px; backdrop-filter:blur(8px);
+    }
+    .hline { width:20px; height:2px; background:#eee; border-radius:2px; }
+
+    /* 우하단 컨트롤 */
+    #controls { bottom:100px; right:20px; display:flex; flex-direction:column; gap:15px; }
+    .ctrl-btn {
+        width:56px; height:56px; border-radius:50%; background:rgba(20,20,35,0.9);
+        border:1px solid rgba(255,255,255,0.15); display:flex; align-items:center;
+        justify-content:center; cursor:pointer; backdrop-filter:blur(8px);
+    }
+    #rec-btn.active { border-color:#e03232; box-shadow:0 0 15px rgba(224,50,50,0.3); }
+    #loc-btn { border:2px solid #f0c040; }
+
+    /* 아이콘 스타일 */
+    .icon-rec { width:14px; height:14px; background:#e03232; border-radius:50%; }
+    .icon-stop { width:14px; height:14px; background:#e03232; border-radius:2px; }
+    .loc-dot { width:10px; height:10px; background:#f0c040; border-radius:50%; box-shadow:0 0 8px #f0c040; }
+
+    /* 하단 통계 */
+    #hud {
+        bottom:0; left:0; right:0; height:80px;
+        background:rgba(10,10,20,0.95); border-top:1px solid rgba(255,255,255,0.05);
+        display:flex; align-items:center; padding:0 30px; backdrop-filter:blur(15px);
+    }
+    .stat { flex:1; }
+    .stat-label { font-size:10px; color:rgba(255,255,255,0.4); text-transform:uppercase; letter-spacing:1px; }
+    .stat-value { font-size:18px; color:#fff; font-weight:600; margin-top:4px; }
+    .stat-value span { font-size:12px; font-weight:400; opacity:0.5; margin-left:3px; }
+
+    /* 플레이어 커스텀 마커 */
+    .player-node {
+        width:14px; height:14px; background:#f0c040; border:2px solid #fff;
+        border-radius:50%; box-shadow:0 0 15px #f0c040;
+    }
+</style>
+</head>
+<body>
+
+<div id="map-wrap"><div id="map"></div></div>
+<canvas id="fog-canvas"></canvas>
+
+<button id="ham-btn" class="ui-overlay">
+    <div class="hline"></div><div class="hline"></div><div class="hline"></div>
+</button>
+
+<div id="controls" class="ui-overlay">
+    <div id="rec-btn" class="ctrl-btn active" onclick="toggleRecording()">
+        <div id="rec-icon" class="icon-stop"></div>
+    </div>
+    <div id="loc-btn" class="ctrl-btn" onclick="centerMap()">
+        <div class="loc-dot"></div>
+    </div>
+</div>
+
+<div id="hud" class="ui-overlay">
+    <div class="stat">
+        <div class="stat-label">Total Distance</div>
+        <div id="dist-val" class="stat-value">0.00<span>km</span></div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">Memories</div>
+        <div id="memo-val" class="stat-value">0<span>pts</span></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // --- 초기 설정 ---
+    let isRecording = true;
+    let currentPos = null;
+    let pathHistory = []; // 모든 기억의 좌표들 [[lat,lng], ...]
+    let sessionPath = []; // 현재 세션 좌표
+    let totalDist = 0;
+    
+    // 지도 초기화 (CartoDB Dark Matter 스타일 활용)
+    const map = L.map('map', { zoomControl:false, attributionControl:false }).setView([37.5665, 126.9780], 17);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+    // 안개 캔버스 설정
+    const canvas = document.getElementById('fog-canvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        renderFog();
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // --- 안개 렌더링 엔진 ---
+    function renderFog() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 1. 전체를 어두운 안개로 덮음
+        ctx.fillStyle = 'rgba(10, 10, 25, 0.9)'; // 짙은 남색 계열 안개
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. '도려내기' 모드 설정
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+
+        const radius = getGlowRadius();
+
+        // 과거 경로들 도려내기 (약간 흐릿하게)
+        pathHistory.forEach(p => drawGlow(p, radius * 0.8, 0.5));
+        
+        // 현재 세션 경로 도려내기 (선명하게)
+        sessionPath.forEach(p => drawGlow(p, radius, 1.0));
+
+        ctx.restore();
+    }
+
+    function drawGlow(latlng, rad, alpha) {
+        const point = map.latLngToContainerPoint(latlng);
+        const grad = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, rad);
+        grad.addColorStop(0, `rgba(0,0,0,${alpha})`);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, rad, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function getGlowRadius() {
+        // 줌 레벨에 따라 안개 제거 반경 조절
+        const zoom = map.getZoom();
+        return Math.max(30, 100 * Math.pow(2, zoom - 18));
+    }
+
+    // 지도 움직일 때마다 안개 다시 그리기
+    map.on('move zoom', renderFog);
+
+    // --- 위치 추적 로직 ---
+    let playerMarker = null;
+
+    function updateLocation(latlng) {
+        if (!playerMarker) {
+            const icon = L.divIcon({ className: 'player-node', iconSize: [14, 14] });
+            playerMarker = L.marker(latlng, { icon }).addTo(map);
+        } else {
+            playerMarker.setLatLng(latlng);
+        }
+
+        if (isRecording) {
+            if (currentPos) {
+                const d = latlng.distanceTo(currentPos);
+                if (d > 5) { // 5미터 이상 이동 시 기록
+                    totalDist += d;
+                    sessionPath.push(latlng);
+                    document.getElementById('dist-val').innerHTML = (totalDist/1000).toFixed(2) + '<span>km</span>';
+                    renderFog();
+                }
+            } else {
+                sessionPath.push(latlng);
+            }
+        }
+        currentPos = latlng;
+    }
+
+    function centerMap() {
+        if (currentPos) map.panTo(currentPos);
+    }
+
+    function toggleRecording() {
+        isRecording = !isRecording;
+        const btn = document.getElementById('rec-btn');
+        const icon = document.getElementById('rec-icon');
+        
+        if (isRecording) {
+            btn.classList.add('active');
+            icon.className = 'icon-stop';
+        } else {
+            btn.classList.remove('active');
+            icon.className = 'icon-rec';
+            // 세션 종료 시 과거 기록으로 병합
+            pathHistory = pathHistory.concat(sessionPath);
+            sessionPath = [];
+            document.getElementById('memo-val').innerText = pathHistory.length;
+        }
+    }
+
+    // --- 시뮬레이션 또는 실제 GPS 연결 ---
+    function startTracking() {
+        map.locate({ watch: true, enableHighAccuracy: true });
+        map.on('locationfound', e => {
+            updateLocation(e.latlng);
+            if (!sessionPath.length) map.setView(e.latlng, 17);
+        });
+        
+        // GPS 미지원 대비 시뮬레이션 (테스트용)
+        setTimeout(() => {
+            if (!currentPos) {
+                console.log("Using Simulation Mode");
+                let simLat = 37.5665;
+                setInterval(() => {
+                    simLat += 0.0001;
+                    updateLocation(L.latLng(simLat, 126.9780));
+                }, 1000);
+            }
+        }, 3000);
+    }
+
+    startTracking();
+</script>
+</body>
+</html>
