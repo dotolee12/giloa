@@ -3,267 +3,245 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>New Daedongyeojido - Giloa</title>
+<title>New Daedongyeojido - Project Giloa</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-    /* 기본 레이아웃 및 폰트 */
+    /* 1. 기본 레이아웃 및 테마 */
     * { box-sizing:border-box; margin:0; padding:0; }
     html,body { width:100%; height:100%; overflow:hidden; background:#111; font-family:'Apple SD Gothic Neo',sans-serif; }
 
-    /* 지도 및 안개 캔버스 */
     #map-wrap { position:absolute; inset:0; z-index:1; }
     #map { width:100%; height:100%; filter: grayscale(1) contrast(1.1); }
-    
-    /* 안개 레이어: 주변 환경이 흐릿하게 보이도록 배경색과 투명도 조절 (Opacity 0.1 반영) */
     #fog-canvas { position:absolute; inset:0; z-index:400; pointer-events:none; }
 
-    /* 상단 상태 바 UI */
-    #top-bar {
-        position:absolute; top:20px; left:20px; right:20px; 
-        display:flex; justify-content:space-between; align-items:flex-start; z-index:1000;
-    }
-    #ham-btn {
-        width:48px; height:48px; background:rgba(30,30,45,0.7);
-        border:1px solid rgba(255,255,255,0.1); border-radius:12px;
-        display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
-    }
+    /* 2. 상단 바 및 사이드바 */
+    #top-bar { position:absolute; top:20px; left:20px; right:20px; display:flex; justify-content:space-between; align-items:center; z-index:1000; }
+    #ham-btn { width:48px; height:48px; background:rgba(30,30,45,0.7); border:1px solid rgba(255,255,255,0.1); border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; cursor:pointer; }
     .hline { width:20px; height:2px; background:#fff; border-radius:1px; }
+    #rec-status-box { padding:10px 18px; background:rgba(30,30,45,0.7); border:1px solid rgba(255,255,255,0.2); border-radius:12px; color:#fff; font-size:14px; font-weight:bold; backdrop-filter:blur(5px); transition: 0.3s; }
+    #rec-status-box.recording { border-color: #ff4444; color: #ff4444; box-shadow: 0 0 10px rgba(255,68,68,0.3); }
 
-    #rec-status-box {
-        padding:10px 18px; background:rgba(30,30,45,0.7);
-        border:1px solid rgba(255,255,255,0.2); border-radius:12px;
-        color:#fff; font-size:14px; font-weight:bold; backdrop-filter:blur(5px);
-    }
-    #rec-status-box.recording { border-color: rgba(255, 68, 68, 0.5); color: #ff4444; }
+    #sidebar { position: fixed; top: 0; left: -300px; width: 300px; height: 100%; background: rgba(20, 20, 30, 0.95); backdrop-filter: blur(15px); z-index: 2000; transition: 0.3s; padding: 25px; color: white; box-shadow: 5px 0 15px rgba(0,0,0,0.5); overflow-y: auto; }
+    #sidebar.open { left: 0; }
+    #sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 1999; }
+    #sidebar-overlay.show { display: block; }
+    .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .sidebar-header h2 { font-size: 18px; color: #f0c040; }
+    .memory-item { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; margin-bottom: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+    .memory-item:hover { border-color: #f0c040; background: rgba(255,255,255,0.1); }
 
-    /* 우하단 버튼 UI */
+    /* 3. 컨트롤 버튼 및 HUD */
     #controls { position:absolute; bottom:110px; right:20px; z-index:1000; display:flex; flex-direction:column; gap:12px; }
-    .btn { width:56px; height:56px; border-radius:50%; background:rgba(30,30,45,0.8); display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.1); cursor:pointer; }
-    #rec-btn { border-color:#ff4444; }
+    .btn { width:56px; height:56px; border-radius:50%; background:rgba(30,30,45,0.8); display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.1); cursor:pointer; font-size: 20px; }
     #rec-btn.recording .icon-rec { display:none; }
     #rec-btn.recording .icon-stop { display:block; }
     #rec-btn .icon-stop { display:none; }
-    
-    #loc-btn { border:2px solid #f0c040; }
-    
-    /* 아이콘 스타일 */
     .icon-stop { width:14px; height:14px; background:#ff4444; border-radius:2px; }
     .icon-rec { width:14px; height:14px; background:#ff4444; border-radius:50%; }
     .icon-loc { width:10px; height:10px; background:#f0c040; border-radius:50%; box-shadow:0 0 8px #f0c040; }
 
-    /* 하단 HUD UI */
-    #hud {
-        position:absolute; bottom:0; left:0; right:0; height:90px;
-        background:rgba(20,20,30,0.85); display:flex; align-items:center; padding:0 30px;
-        z-index:999; border-top:1px solid rgba(255,255,255,0.1); backdrop-filter:blur(10px);
-    }
+    #hud { position:absolute; bottom:0; left:0; right:0; height:90px; background:rgba(20,20,30,0.85); display:flex; align-items:center; padding:0 30px; z-index:999; border-top:1px solid rgba(255,255,255,0.1); backdrop-filter:blur(10px); }
     .stat { flex:1; }
-    .label { font-size:11px; color:rgba(255,255,255,0.4); font-weight:bold; text-transform:uppercase; }
+    .label { font-size:11px; color:rgba(255,255,255,0.4); font-weight:bold; }
     .value { font-size:20px; color:#fff; font-weight:600; margin-top:4px; }
-    .value span { font-size:13px; opacity:0.5; margin-left:4px; }
-
-    /* 플레이어 현재 위치 마커 */
+    
     .player-marker { width:16px; height:16px; background:#f0c040; border:2px solid #fff; border-radius:50%; box-shadow:0 0 10px #f0c040; }
+    .memory-marker { font-size: 24px; display: flex; justify-content: center; align-items: center; }
 </style>
 </head>
 <body>
+
+<div id="sidebar">
+    <div class="sidebar-header"><h2>나의 기록들</h2><span id="close-btn" onclick="toggleSidebar()">✕</span></div>
+    <div id="memory-list-container"><p style="opacity:0.5; text-align:center; margin-top:50px;">아직 기록이 없습니다.</p></div>
+</div>
+<div id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
 <div id="map-wrap"><div id="map"></div></div>
 <canvas id="fog-canvas"></canvas>
 
 <div id="top-bar">
-    <div id="ham-btn"><div class="hline"></div><div class="hline"></div><div class="hline"></div></div>
+    <div id="ham-btn" onclick="toggleSidebar()"><div class="hline"></div><div class="hline"></div><div class="hline"></div></div>
     <div id="rec-status-box">[중단]</div>
 </div>
 
 <div id="controls">
     <div id="rec-btn" class="btn" onclick="toggleRecording()"><div class="icon-rec"></div><div class="icon-stop"></div></div>
+    <div id="memo-btn" class="btn" onclick="addMemory()">⭐</div>
     <div id="loc-btn" class="btn" onclick="centerMap()"><div class="icon-loc"></div></div>
 </div>
 
 <div id="hud">
-    <div class="stat">
-        <div class="label">TOTAL DISTANCE</div>
-        <div id="dist-val" class="value">0.00<span>km</span></div>
-    </div>
-    <div class="stat">
-        <div class="label">MEMORIES</div>
-        <div id="memo-val" class="value">0</div>
-    </div>
+    <div class="stat"><div class="label">TOTAL DISTANCE</div><div id="dist-val" class="value">0.00<span>km</span></div></div>
+    <div class="stat"><div class="label">MEMORIES</div><div id="memo-val" class="value">0</div></div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // --- 기능 구현 시작 ---
+    // --- [1] 초기 상태 정의 ---
+    let isRecording = false;
+    let currentPos = null;
+    let pathCoordinates = []; // {latlng, startTime, endTime}
+    let memories = [];        // {latlng, name, time, dateString}
+    let totalDistance = 0;
+    let playerMarker = null;
 
-    // 1. 초기 상태 및 데이터 정의
-    let isRecording = false; // 기록 중 상태
-    let currentPos = null;    // 현재 위치 좌표
-    let pathCoordinates = []; // 지나온 전체 경로 좌표 리스트
-    let totalDistance = 0;   // 총 이동 거리
-
-    // 2. 지도 초기화 (CartoDB Light 레이어 활용하여 흑백 대비 강조)
-    const map = L.map('map', { zoomControl:false, attributionControl:false }).setView([37.5759, 126.9768], 16);
+    const map = L.map('map', { zoomControl:false, attributionControl:false }).setView([37.5665, 126.9780], 16);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-    // 3. 안개 캔버스 설정
     const canvas = document.getElementById('fog-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 화면 크기에 맞게 캔버스 크기 조정
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-        renderFog(); // 크기가 변경될 때 안개 다시 그리기
+        renderFog();
     }
     window.addEventListener('resize', resizeCanvas);
-    resizeCanvas(); // 초기 실행
+    resizeCanvas();
 
-    // 4. 안개 및 '지나간 길' 렌더링 엔진 (핵심 기능)
+    // --- [2] 안개 및 탐사 엔진 (시간 비례 확장) ---
     function renderFog() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // [시각 효과] 전체를 10% 투명도로 어둡게 덮음 (주변이 흐릿하게 보임)
-        ctx.fillStyle = 'rgba(10, 10, 25, 0.5)'; // 짙은 남색 안개
+        ctx.fillStyle = 'rgba(10, 10, 25, 0.7)'; // 가시성 30% 기본 안개
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // [도려내기 모드] '지나온 길'을 투명하게 뚫는 연출
+        if (pathCoordinates.length === 0) return;
+
         ctx.save();
         ctx.globalCompositeOperation = 'destination-out';
+        const now = new Date().getTime();
 
-        // 이미지와 동일하게 '약간 투명한 안개' 효과를 위해 globalAlpha 조절 (0.9 -> 1.0 = 투명하게 뚫림)
-        ctx.globalAlpha = 1.0; 
+        pathCoordinates.forEach((point, i) => {
+            // A. 시간에 따른 안개 퇴색 (하루 1%, 60일 후 40% 고정)
+            const diffDays = (now - point.startTime) / (1000 * 60 * 60 * 24);
+            let clearAmount = Math.max(0.4, 1.0 - (Math.floor(diffDays) * 0.01));
+            ctx.globalAlpha = clearAmount;
 
-        // [핵심 시각 효과] 지나온 길을 10m 영역만 밝게 도려냄
-        // pathCoordinates가 비어있지 않을 때만 그리기 시작
-        if (pathCoordinates.length > 0) {
+            // B. 머문 시간에 따른 반지름 계산 (최대 25m)
+            const stayMin = (point.endTime - point.startTime) / (1000 * 60);
+            let dynamicRadius = 15 + Math.min(10, stayMin * (10 / 60)); // 60분간 15m -> 25m 확장
+
+            const pos = map.latLngToContainerPoint(point.latlng);
+            
+            // 원형 탐사 영역
             ctx.beginPath();
-            
-            // 첫 번째 좌표로 이동
-            const startPoint = map.latLngToContainerPoint(pathCoordinates[0]);
-            ctx.moveTo(startPoint.x, startPoint.y);
+            ctx.arc(pos.x, pos.y, getMetersToPixels(dynamicRadius), 0, Math.PI * 2);
+            ctx.fill();
 
-            // 나머지 좌표를 선으로 연결
-            for (let i = 1; i < pathCoordinates.length; i++) {
-                const point = map.latLngToContainerPoint(pathCoordinates[i]);
-                ctx.lineTo(point.x, point.y);
+            // C. 이동 경로 연결 (선)
+            if (i > 0) {
+                const prevPos = map.latLngToContainerPoint(pathCoordinates[i-1].latlng);
+                ctx.beginPath();
+                ctx.lineWidth = getMetersToPixels(15);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.moveTo(prevPos.x, prevPos.y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
             }
-
-            // [핵심 속성] 선의 두께를 10m 정도로 설정
-            // 줌 레벨에 따라 두께를 동적으로 조절할 수도 있지만, 여기서는 고정된 값으로 이미지 느낌 구현
-            ctx.lineWidth = getMetersToPixels(10); // 10m를 픽셀로 변환하여 적용
-            ctx.lineCap = 'round';   // 선 끝을 둥글게
-            ctx.lineJoin = 'round';  // 연결 부위를 둥글게
-            
-            // 선을 따라 도려내기 실행
-            ctx.stroke(); 
-        }
-
+        });
         ctx.restore();
     }
 
-    // 미터 단위를 현재 지도 줌 레벨에 맞는 픽셀 두께로 변환하는 함수
     function getMetersToPixels(meters) {
-        // Leaflet의 meter 도구 활용
-        const centerLatLng = map.getCenter();
-        const pointC = map.latLngToContainerPoint(centerLatLng);
-        const pointX = L.point(pointC.x + 10, pointC.y); // 가로로 10px 이동한 점
-        const latLngX = map.containerPointToLatLng(pointX);
-        const distancePer10Px = centerLatLng.distanceTo(latLngX); // 10px당 실제 미터 거리
-        return (meters / distancePer10Px) * 10;
+        const center = map.getCenter();
+        const latLng2 = map.containerPointToLatLng(L.point(map.latLngToContainerPoint(center).x + 10, map.latLngToContainerPoint(center).y));
+        return (meters / center.distanceTo(latLng2)) * 10;
     }
 
-    // 지도 이동 시 안개 다시 그리기 (실시간 도려내기 효과)
-    map.on('move zoom', renderFog);
-
-    // 5. GPS 위치 추적 및 실시간 기록 기능
-    let playerMarker = null;
-
-    function handleLocationUpdate(latlng) {
-        // 현재 위치 업데이트
-        currentPos = latlng;
-
-        // 플레이어 마커 업데이트
-        if (!playerMarker) {
-            const icon = L.divIcon({ className: 'player-marker', iconSize: [16, 16] });
-            playerMarker = L.marker(latlng, { icon }).addTo(map);
-        } else {
-            playerMarker.setLatLng(latlng);
-        }
-
-        // [핵심 기능] 기록 중일 때만 좌표를 저장하고 거리 계산
-        if (isRecording) {
-            if (pathCoordinates.length > 0) {
-                // 이전 좌표와의 거리 계산
-                const prevPos = pathCoordinates[pathCoordinates.length - 1];
-                const distance = latlng.distanceTo(prevPos);
-
-                // 너무 미세한 움직임은 무시 (5m 이상 이동 시 기록)
-                if (distance > 5) {
-                    totalDistance += distance;
-                    pathCoordinates.push(latlng);
-                    updateStats();
-                    renderFog(); // 길을 다시 그림
-                }
-            } else {
-                pathCoordinates.push(latlng); // 첫 기록 좌표 저장
-            }
-        }
-    }
-
-    // 통계 및 HUD 업데이트 함수
-    function updateStats() {
-        document.getElementById('dist-val').innerHTML = (totalDistance / 1000).toFixed(2) + '<span>km</span>';
-        document.getElementById('memo-val').innerText = Math.floor(totalDistance / 200); // 200m당 '기억' 1개 추가 (임시 공식)
-    }
-
-    // 현재 위치로 지도 중심 이동
-    function centerMap() {
-        if (currentPos) map.panTo(currentPos);
-    }
-
-    // 6. UI 제어 기능 (기록 시작/중단)
+    // --- [3] GPS 및 기록 제어 ---
     function toggleRecording() {
         isRecording = !isRecording;
-        
-        // UI 요소 업데이트
-        const btn = document.getElementById('rec-btn');
+        document.getElementById('rec-btn').classList.toggle('recording', isRecording);
         const statusBox = document.getElementById('rec-status-box');
-        
+        statusBox.classList.toggle('recording', isRecording);
+        statusBox.innerText = isRecording ? '[기록중]' : '[중단]';
+
         if (isRecording) {
-            btn.classList.add('recording');
-            statusBox.innerText = '[기록중]';
-            statusBox.classList.add('recording');
+            map.locate({ watch: true, enableHighAccuracy: true });
         } else {
-            btn.classList.remove('recording');
-            statusBox.innerText = '[중단]';
-            statusBox.classList.remove('recording');
+            map.stopLocate();
         }
     }
 
-    // 7. 앱 시작: 실제 GPS 연결
-    function startTracking() {
-        // Leaflet의 locate 메서드 활용하여 GPS 데이터 요청
-        map.locate({ watch: true, enableHighAccuracy: true });
-        
-        // 위치를 찾았을 때 실행되는 이벤트
-        map.on('locationfound', e => {
-            handleLocationUpdate(e.latlng);
-            // 앱 실행 시 첫 위치를 지도 중심으로 설정
-            if (!currentPos) map.setView(e.latlng, 16);
-        });
+    map.on('locationfound', e => {
+        currentPos = e.latlng;
+        if (!playerMarker) {
+            playerMarker = L.marker(e.latlng, { icon: L.divIcon({ className: 'player-marker', iconSize: [16, 16] }) }).addTo(map);
+            map.setView(e.latlng, 16);
+        } else {
+            playerMarker.setLatLng(e.latlng);
+        }
 
-        // 위치 찾기에 실패했을 때 예외 처리
-        map.on('locationerror', e => {
-            console.error("GPS Error:", e.message);
-            // PC 등 GPS가 없는 환경을 위한 예시 좌표 (서울 시청 주변)
-            handleLocationUpdate(L.latLng(37.5665, 126.9780));
-            map.setView([37.5665, 126.9780], 16);
+        if (isRecording) {
+            const now = new Date().getTime();
+            if (pathCoordinates.length > 0) {
+                let lastPoint = pathCoordinates[pathCoordinates.length - 1];
+                const dist = e.latlng.distanceTo(lastPoint.latlng);
+                
+                if (dist <= 5) {
+                    lastPoint.endTime = now; // 머무름 업데이트
+                } else {
+                    totalDistance += dist;
+                    pathCoordinates.push({ latlng: e.latlng, startTime: now, endTime: now });
+                    updateStats();
+                }
+            } else {
+                pathCoordinates.push({ latlng: e.latlng, startTime: now, endTime: now });
+            }
+            renderFog();
+        }
+    });
+
+    function updateStats() {
+        document.getElementById('dist-val').innerHTML = (totalDistance / 1000).toFixed(2) + '<span>km</span>';
+    }
+
+    // --- [4] 기억(마킹) 및 UI 제어 ---
+    function addMemory() {
+        if (!currentPos) return alert("위치 정보를 수신 중입니다.");
+        const name = prompt("이 장소의 이름을 입력하세요:", "새로운 발견");
+        if (name === null) return;
+        
+        const now = new Date();
+        const memoryData = {
+            latlng: currentPos,
+            name: name.trim() || "기억의 지점",
+            time: now.getTime(),
+            dateString: now.toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric' })
+        };
+
+        memories.push(memoryData);
+        createMemoryMarker(memoryData);
+        updateMemoryList();
+        document.getElementById('memo-val').innerText = memories.length;
+    }
+
+    function createMemoryMarker(data) {
+        const marker = L.marker(data.latlng, { icon: L.divIcon({ className:'memory-marker', html:'📍', iconSize:[30,30] }) }).addTo(map);
+        marker.bindPopup(`<b>${data.name}</b><br><small>${data.dateString} 기록</small>`).openPopup();
+    }
+
+    function updateMemoryList() {
+        const container = document.getElementById('memory-list-container');
+        container.innerHTML = '';
+        [...memories].reverse().forEach(memo => {
+            const item = document.createElement('div');
+            item.className = 'memory-item';
+            item.innerHTML = `<span class="item-name">📍 ${memo.name}</span><span class="item-date">${memo.dateString}</span>`;
+            item.onclick = () => { map.flyTo(memo.latlng, 17); toggleSidebar(); };
+            container.appendChild(item);
         });
     }
 
-    // 앱 실행
-    startTracking();
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('open');
+        document.getElementById('sidebar-overlay').classList.toggle('show');
+    }
+
+    function centerMap() { if (currentPos) map.panTo(currentPos); }
+    map.on('move zoom', renderFog);
 </script>
 </body>
 </html>
